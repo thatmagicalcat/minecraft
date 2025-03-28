@@ -1,0 +1,11 @@
+[package]
+name = "minecraft"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytemuck = "1.21.0"
+glam = "0.30.0"
+glfw = "0.59.0"
+glow = "0.16.0"
+stb_image = "0.3.0"
