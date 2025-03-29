@@ -65,9 +65,9 @@ fn main() {
     let spacing = 1.0;
 
     // Generate multiple chunks at different positions
-    for chunk_x in 0..20 {
+    for chunk_x in 0..2 {
         for chunk_y in 0..2 {
-            for chunk_z in 0..20 {
+            for chunk_z in 0..2 {
                 let chunk_data = generate_chunk(
                     chunk_x,
                     0,
@@ -195,7 +195,7 @@ fn main() {
         right_pressed: false,
     };
 
-    let light_position = glam::vec3(-2.0, 16.0, -5.0);
+    let light_position = glam::vec3(-2.0, 8.0, -5.0);
     let light_color = glam::vec3(1.0, 1.0, 1.0);
 
     while !window.should_close() {
