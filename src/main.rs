@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::{ffi::CString, time::Instant};
 
 use camera::Camera;
 use glfw::{WindowEvent, *};
@@ -55,7 +55,7 @@ fn main() {
     unsafe { gl.viewport(0, 0, WIDTH as _, HEIGHT as _) };
 
     let vao = unsafe { gl.create_vertex_array().unwrap() };
-    let vbo = unsafe { gl.create_buffer().unwrap() };
+    let cube_vbo = unsafe { gl.create_buffer().unwrap() };
     let instance_vbo = unsafe { gl.create_buffer().unwrap() };
     // let ebo = unsafe { gl.create_buffer().unwrap() };
 
@@ -87,36 +87,54 @@ fn main() {
     unsafe {
         gl.bind_vertex_array(Some(vao));
 
-        gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+        gl.bind_buffer(glow::ARRAY_BUFFER, Some(cube_vbo));
         gl.buffer_data_u8_slice(
             glow::ARRAY_BUFFER,
             bytemuck::cast_slice(&VERTICES),
             glow::STATIC_DRAW,
         );
 
+        let stride = (8 * F32S) as i32;
+
         // position
         gl.enable_vertex_attrib_array(0);
-        gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 5 * F32S as i32, 0);
+        gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, stride, 0);
 
         // tex coord
         gl.enable_vertex_attrib_array(1);
-        gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, 5 * F32S as i32, 3 * F32S as i32);
+        gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, stride, 3 * F32S as i32);
+
+        // normal
+        gl.enable_vertex_attrib_array(2);
+        gl.vertex_attrib_pointer_f32(2, 3, glow::FLOAT, false, stride, 5 * F32S as i32);
 
         gl.bind_buffer(glow::ARRAY_BUFFER, Some(instance_vbo));
 
         gl.buffer_data_u8_slice(
             glow::ARRAY_BUFFER,
-            bytemuck::cast_slice(instance_positions),
+            bytemuck::cast_slice(&instance_positions),
             glow::STATIC_DRAW,
         );
 
         // instance position
-        gl.enable_vertex_attrib_array(2);
-        gl.vertex_attrib_pointer_f32(2, 3, glow::FLOAT, false, F32S as i32 * 3, 0);
-        gl.vertex_attrib_divisor(2, 1);
+        gl.enable_vertex_attrib_array(3);
+        gl.vertex_attrib_pointer_f32(3, 3, glow::FLOAT, false, F32S as i32 * 3, 0);
+        gl.vertex_attrib_divisor(3, 1);
 
         gl.bind_buffer(glow::ARRAY_BUFFER, None);
         gl.bind_vertex_array(None);
+    }
+
+    // lighting
+
+    let light_vao = unsafe { gl.create_vertex_array().unwrap() };
+    unsafe {
+        gl.bind_vertex_array(Some(light_vao));
+        gl.bind_buffer(glow::ARRAY_BUFFER, Some(cube_vbo));
+
+        // position
+        gl.enable_vertex_attrib_array(0);
+        gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, 5 * F32S as i32, 0);
     }
 
     let shader_program = unsafe {
@@ -135,38 +153,26 @@ fn main() {
     };
 
     let texture_id = unsafe {
-        let texture_data = load_texture("sample_texture.png");
+        let tex_dirt = load_texture("res/dirt.png");
+
         let id = gl.create_texture().unwrap();
         gl.bind_texture(glow::TEXTURE_2D, Some(id));
 
         gl.tex_image_2d(
             glow::TEXTURE_2D,
             0,
-            texture_data.format as _,
-            texture_data.width,
-            texture_data.height,
+            tex_dirt.format as _,
+            tex_dirt.width,
+            tex_dirt.height,
             0,
-            texture_data.format,
+            tex_dirt.format,
             glow::UNSIGNED_BYTE,
-            glow::PixelUnpackData::Slice(Some(texture_data.data)),
+            glow::PixelUnpackData::Slice(Some(tex_dirt.data)),
         );
 
         gl.generate_mipmap(glow::TEXTURE_2D);
 
-        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as _);
-        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as _);
-
-        gl.tex_parameter_i32(
-            glow::TEXTURE_2D,
-            glow::TEXTURE_MIN_FILTER,
-            glow::NEAREST_MIPMAP_NEAREST as _,
-        );
-
-        gl.tex_parameter_i32(
-            glow::TEXTURE_2D,
-            glow::TEXTURE_MAG_FILTER,
-            glow::NEAREST as _,
-        );
+        setup_texutre_params(&gl, glow::TEXTURE_2D);
 
         id
     };
@@ -174,7 +180,7 @@ fn main() {
     let (width, height) = window.get_size();
 
     let mut camera = Camera {
-        eye: (0.0, 1.0, 2.0).into(),
+        eye: (3.0, 7.0, 10.0).into(),
         target: (0.0, 0.0, 0.0).into(), // have a look at the origin
         up: glam::Vec3::Y,
         aspect: width as f32 / height as f32,
@@ -188,6 +194,9 @@ fn main() {
         left_pressed: false,
         right_pressed: false,
     };
+
+    let light_position = glam::vec3(-2.0, 16.0, -5.0);
+    let light_color = glam::vec3(1.0, 1.0, 1.0);
 
     while !window.should_close() {
         glfw.poll_events();
@@ -209,29 +218,48 @@ fn main() {
             }
         });
 
-        // let model = glam::Mat4::from_rotation_x(glfw.get_time() as f32 * 50.0f32.to_radians())
-        // * glam::Mat4::from_rotation_y(glfw.get_time() as f32 * 50.0f32.to_radians())
-        // * glam::Mat4::from_rotation_z(glfw.get_time() as f32 * 50.0f32.to_radians());
-
-        // let model = glam::Mat4::IDENTITY;
         let view = camera.get_view();
         let projection = camera.get_projection();
 
         unsafe {
+            let clock = Instant::now();
             gl.use_program(Some(shader_program));
 
-            // gl.uniform_matrix_4_f32_slice(
-            //     gl.get_uniform_location(shader_program, "model").as_ref(),
-            //     false,
-            //     &model.to_cols_array(),
-            // );
+            // eye position
+            gl.uniform_3_f32(
+                gl.get_uniform_location(shader_program, "eye_position")
+                    .as_ref(),
+                camera.eye.x,
+                camera.eye.y,
+                camera.eye.z,
+            );
 
+            // light position
+            gl.uniform_3_f32(
+                gl.get_uniform_location(shader_program, "light_position")
+                    .as_ref(),
+                light_position.x,
+                light_position.y,
+                light_position.z,
+            );
+
+            // light color
+            gl.uniform_3_f32(
+                gl.get_uniform_location(shader_program, "light_color")
+                    .as_ref(),
+                light_color.x,
+                light_color.y,
+                light_color.z,
+            );
+
+            // view matrix
             gl.uniform_matrix_4_f32_slice(
                 gl.get_uniform_location(shader_program, "view").as_ref(),
                 false,
                 &view.to_cols_array(),
             );
 
+            // projection matrix
             gl.uniform_matrix_4_f32_slice(
                 gl.get_uniform_location(shader_program, "projection")
                     .as_ref(),
@@ -244,8 +272,9 @@ fn main() {
 
             gl.bind_texture(glow::TEXTURE_2D, Some(texture_id));
             gl.bind_vertex_array(Some(vao));
+
             gl.draw_arrays_instanced(glow::TRIANGLES, 0, 36, instance_positions.len() as _);
-            // gl.draw_arrays(glow::TRIANGLES, 0, 36);
+            println!("GPU Time: {:?}", clock.elapsed());
         }
 
         window.swap_buffers();
@@ -254,7 +283,22 @@ fn main() {
     unsafe {
         gl.delete_program(shader_program);
         gl.delete_vertex_array(vao);
-        gl.delete_buffer(vbo);
+        gl.delete_buffer(cube_vbo);
+    }
+}
+
+fn setup_texutre_params(gl: &glow::Context, target: u32) {
+    unsafe {
+        gl.tex_parameter_i32(target, glow::TEXTURE_WRAP_S, glow::REPEAT as _);
+        gl.tex_parameter_i32(target, glow::TEXTURE_WRAP_T, glow::REPEAT as _);
+
+        gl.tex_parameter_i32(
+            target,
+            glow::TEXTURE_MIN_FILTER,
+            glow::NEAREST_MIPMAP_LINEAR as _,
+        );
+
+        gl.tex_parameter_i32(target, glow::TEXTURE_MAG_FILTER, glow::NEAREST as _);
     }
 }
 
@@ -380,82 +424,70 @@ fn generate_chunk(
 }
 
 #[rustfmt::skip]
-const VERTICES: [f32; 180] = [
+const VERTICES: [f32; 288] = [
     // ---------------------------
-    // FRONT face (z = +0.5)
-    // Using UV range u ∈ [0.50, 0.75], v ∈ [0.3333, 0.6667]
-
+    // FRONT face (z = +0.5), normal (0, 0, 1)
     // Triangle 1
-    -0.5, -0.5, 0.5, 0.50, 0.3333, // bottom-left
-    -0.5,  0.5, 0.5, 0.50, 0.6667, // top-left
-     0.5,  0.5, 0.5, 0.75, 0.6667, // top-right
+    -0.5, -0.5,  0.5,  0.50, 0.3333,  0.0,  0.0,  1.0, // bottom-left
+    -0.5,  0.5,  0.5,  0.50, 0.6667,  0.0,  0.0,  1.0, // top-left
+     0.5,  0.5,  0.5,  0.75, 0.6667,  0.0,  0.0,  1.0, // top-right
     // Triangle 2
-    -0.5, -0.5, 0.5, 0.50, 0.3333, // bottom-left
-     0.5,  0.5, 0.5, 0.75, 0.6667, // top-right
-     0.5, -0.5, 0.5, 0.75, 0.3333, // bottom-right
+    -0.5, -0.5,  0.5,  0.50, 0.3333,  0.0,  0.0,  1.0, // bottom-left
+     0.5,  0.5,  0.5,  0.75, 0.6667,  0.0,  0.0,  1.0, // top-right
+     0.5, -0.5,  0.5,  0.75, 0.3333,  0.0,  0.0,  1.0, // bottom-right
 
     // ---------------------------
-    // BACK face (z = -0.5)
-    // Using UV range u ∈ [0.00, 0.25], v ∈ [0.3333, 0.6667]
-
+    // BACK face (z = -0.5), normal (0, 0, -1)
     // Triangle 1
-     0.5, -0.5, -0.5, 0.00, 0.3333,
-     0.5,  0.5, -0.5, 0.00, 0.6667,
-    -0.5,  0.5, -0.5, 0.25, 0.6667,
+     0.5, -0.5, -0.5,  0.00, 0.3333,  0.0,  0.0, -1.0,
+     0.5,  0.5, -0.5,  0.00, 0.6667,  0.0,  0.0, -1.0,
+    -0.5,  0.5, -0.5,  0.25, 0.6667,  0.0,  0.0, -1.0,
     // Triangle 2
-     0.5, -0.5, -0.5, 0.00, 0.3333,
-    -0.5,  0.5, -0.5, 0.25, 0.6667,
-    -0.5, -0.5, -0.5, 0.25, 0.3333,
+     0.5, -0.5, -0.5,  0.00, 0.3333,  0.0,  0.0, -1.0,
+    -0.5,  0.5, -0.5,  0.25, 0.6667,  0.0,  0.0, -1.0,
+    -0.5, -0.5, -0.5,  0.25, 0.3333,  0.0,  0.0, -1.0,
 
     // ---------------------------
-    // LEFT face (x = -0.5)
-    // Using UV range u ∈ [0.25, 0.50], v ∈ [0.3333, 0.6667]
-
+    // LEFT face (x = -0.5), normal (-1, 0, 0)
     // Triangle 1
-    -0.5, -0.5, -0.5, 0.25, 0.3333,
-    -0.5,  0.5, -0.5, 0.25, 0.6667,
-    -0.5,  0.5,  0.5, 0.50, 0.6667,
+    -0.5, -0.5, -0.5,  0.25, 0.3333, -1.0,  0.0,  0.0,
+    -0.5,  0.5, -0.5,  0.25, 0.6667, -1.0,  0.0,  0.0,
+    -0.5,  0.5,  0.5,  0.50, 0.6667, -1.0,  0.0,  0.0,
     // Triangle 2
-    -0.5, -0.5, -0.5, 0.25, 0.3333,
-    -0.5,  0.5,  0.5, 0.50, 0.6667,
-    -0.5, -0.5,  0.5, 0.50, 0.3333,
+    -0.5, -0.5, -0.5,  0.25, 0.3333, -1.0,  0.0,  0.0,
+    -0.5,  0.5,  0.5,  0.50, 0.6667, -1.0,  0.0,  0.0,
+    -0.5, -0.5,  0.5,  0.50, 0.3333, -1.0,  0.0,  0.0,
 
     // ---------------------------
-    // RIGHT face (x =  0.5)
-    // Using UV range u ∈ [0.75, 1.00], v ∈ [0.3333, 0.6667]
-
+    // RIGHT face (x =  0.5), normal (1, 0, 0)
     // Triangle 1
-     0.5, -0.5,  0.5, 0.75, 0.3333,
-     0.5,  0.5,  0.5, 0.75, 0.6667,
-     0.5,  0.5, -0.5, 1.00, 0.6667,
+     0.5, -0.5,  0.5,  0.75, 0.3333,  1.0,  0.0,  0.0,
+     0.5,  0.5,  0.5,  0.75, 0.6667,  1.0,  0.0,  0.0,
+     0.5,  0.5, -0.5,  1.00, 0.6667,  1.0,  0.0,  0.0,
     // Triangle 2
-     0.5, -0.5,  0.5, 0.75, 0.3333,
-     0.5,  0.5, -0.5, 1.00, 0.6667,
-     0.5, -0.5, -0.5, 1.00, 0.3333,
+     0.5, -0.5,  0.5,  0.75, 0.3333,  1.0,  0.0,  0.0,
+     0.5,  0.5, -0.5,  1.00, 0.6667,  1.0,  0.0,  0.0,
+     0.5, -0.5, -0.5,  1.00, 0.3333,  1.0,  0.0,  0.0,
 
     // ---------------------------
-    // UP face (y =  0.5)
-    // Using UV range u ∈ [0.25, 0.50], v ∈ [0.00, 0.3333]
-
+    // UP face (y =  0.5), normal (0, 1, 0)
     // Triangle 1
-    -0.5,  0.5,  0.5, 0.25, 0.6667,
-    -0.5,  0.5, -0.5, 0.25, 1.00  ,
-     0.5,  0.5, -0.5, 0.50, 1.00  ,
+    -0.5,  0.5,  0.5,  0.25, 0.6667,  0.0,  1.0,  0.0,
+    -0.5,  0.5, -0.5,  0.25, 1.00,    0.0,  1.0,  0.0,
+     0.5,  0.5, -0.5,  0.50, 1.00,    0.0,  1.0,  0.0,
     // Triangle 2
-    -0.5,  0.5,  0.5, 0.25, 0.6667,
-     0.5,  0.5, -0.5, 0.50, 1.00  ,
-     0.5,  0.5,  0.5, 0.50, 0.6667,
+    -0.5,  0.5,  0.5,  0.25, 0.6667,  0.0,  1.0,  0.0,
+     0.5,  0.5, -0.5,  0.50, 1.00,    0.0,  1.0,  0.0,
+     0.5,  0.5,  0.5,  0.50, 0.6667,  0.0,  1.0,  0.0,
 
     // ---------------------------
-    // DOWN face (y = -0.5)
-    // Using UV range u ∈ [0.25, 0.50], v ∈ [0.6667, 1.00]
-
+    // DOWN face (y = -0.5), normal (0, -1, 0)
     // Triangle 1
-    -0.5, -0.5, -0.5,  0.25, 0.00  ,
-    -0.5, -0.5,  0.5,  0.25, 0.3333,
-     0.5, -0.5,  0.5,  0.50, 0.3333,
+    -0.5, -0.5, -0.5,  0.25, 0.00,  0.0, -1.0,  0.0,
+    -0.5, -0.5,  0.5,  0.25, 0.3333,  0.0, -1.0,  0.0,
+     0.5, -0.5,  0.5,  0.50, 0.3333,  0.0, -1.0,  0.0,
     // Triangle 2
-    -0.5, -0.5, -0.5, 0.25, 0.00  ,
-     0.5, -0.5,  0.5, 0.50, 0.3333,
-     0.5, -0.5, -0.5, 0.50, 0.00  ,
+    -0.5, -0.5, -0.5,  0.25, 0.00,  0.0, -1.0,  0.0,
+     0.5, -0.5,  0.5,  0.50, 0.3333,  0.0, -1.0,  0.0,
+     0.5, -0.5, -0.5,  0.50, 0.00,  0.0, -1.0,  0.0,
 ];
