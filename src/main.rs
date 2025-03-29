@@ -41,6 +41,9 @@ fn main() {
     unsafe {
         gl.enable(glow::DEPTH_TEST);
         gl.enable(glow::DEBUG_OUTPUT);
+        gl.enable(glow::CULL_FACE);
+        gl.cull_face(glow::FRONT);
+
         gl.debug_message_callback(|_source, _gltype, id, severity, msg| {
             println!(
                 "GL CALLBACK: {} severity = {}, message = {}",
