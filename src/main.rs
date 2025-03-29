@@ -59,33 +59,30 @@ fn main() {
     let instance_vbo = unsafe { gl.create_buffer().unwrap() };
     // let ebo = unsafe { gl.create_buffer().unwrap() };
 
-    #[rustfmt::skip]
-    let instance_positions: &[f32] = &[
-    //     x     y     z
-         0.0,  0.0,  0.0,
-         0.0,  0.0, -1.0,
-         0.0,  0.0, -2.0,
-         0.0,  0.0, -3.0,
-         0.0,  0.0, -4.0,
+    let chunk_size = (4, 4, 4); // (length, breadth, depth)
+    let mut instance_positions: Vec<f32> = vec![];
+    // Vec::with_capacity(chunk_size.0 * chunk_size.1 * chunk_size.2);
+    let spacing = 1.0;
 
-         1.0,  0.0,  0.0,
-         1.0,  0.0, -1.0,
-         1.0,  0.0, -2.0,
-         1.0,  0.0, -3.0,
-         1.0,  0.0, -4.0,
+    // Generate multiple chunks at different positions
+    for chunk_x in 0..20 {
+        for chunk_y in 0..2 {
+            for chunk_z in 0..20 {
+                let chunk_data = generate_chunk(
+                    chunk_x,
+                    0,
+                    // chunk_y,
+                    chunk_z,
+                    chunk_size.0,
+                    chunk_size.1,
+                    chunk_size.2,
+                    spacing,
+                );
 
-         2.0,  0.0,  0.0,
-         2.0,  0.0, -1.0,
-         2.0,  0.0, -2.0,
-         2.0,  0.0, -3.0,
-         2.0,  0.0, -4.0,
-
-         3.0,  0.0,  0.0,
-         3.0,  0.0, -1.0,
-         3.0,  0.0, -2.0,
-         3.0,  0.0, -3.0,
-         3.0,  0.0, -4.0,
-    ];
+                instance_positions.extend(chunk_data);
+            }
+        }
+    }
 
     unsafe {
         gl.bind_vertex_array(Some(vao));
@@ -354,6 +351,32 @@ fn compile_shader(gl: &glow::Context, shader_type: u32, source: &str) -> glow::N
 
         shader
     }
+}
+
+fn generate_chunk(
+    chunk_x: i32,
+    chunk_y: i32,
+    chunk_z: i32,
+    length: i32,
+    breadth: i32,
+    depth: i32,
+    spacing: f32,
+) -> Vec<f32> {
+    let mut positions = Vec::with_capacity((length * breadth * depth) as usize);
+
+    for x in 0..breadth {
+        for y in 0..length {
+            for z in 0..depth {
+                let world_x = chunk_x as f32 * length as f32 * spacing + x as f32 * spacing;
+                let world_y = chunk_y as f32 * breadth as f32 * spacing + y as f32 * spacing;
+                let world_z = chunk_z as f32 * depth as f32 * spacing - z as f32 * spacing; // Negative Z direction
+
+                positions.extend_from_slice(&[world_x, world_y, world_z]);
+            }
+        }
+    }
+
+    positions
 }
 
 #[rustfmt::skip]
