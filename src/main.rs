@@ -16,9 +16,14 @@ const F32S: usize = std::mem::size_of::<f32>();
 fn main() {
     let mut glfw = glfw::init(glfw::fail_on_errors).unwrap();
 
+    // OpenGL 3.3 core
     glfw.window_hint(WindowHint::ContextVersionMinor(3));
     glfw.window_hint(WindowHint::ContextVersionMajor(3));
     glfw.window_hint(WindowHint::OpenGlProfile(OpenGlProfileHint::Core));
+
+    #[cfg(target_os = "macos")]
+    glfw.window_hint(glfw::WindowHint::OpenGlForwardCompat(true));
+
     glfw.window_hint(WindowHint::Decorated(false)); // No frame
     glfw.window_hint(WindowHint::TransparentFramebuffer(false));
     glfw.window_hint(WindowHint::Resizable(true));
