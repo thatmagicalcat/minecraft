@@ -1,15 +1,15 @@
 use std::{ffi::CString, time::Instant};
 
-use camera::Camera;
-use glfw::{WindowEvent, *};
+use glfw::*;
 use glow::*;
 
 mod camera;
+use camera::*;
 
 use stb_image::stb_image as image;
 
-const WIDTH: u32 = 800;
-const HEIGHT: u32 = 800;
+const WIDTH: u32 = 1900;
+const HEIGHT: u32 = 1000;
 
 const F32S: usize = std::mem::size_of::<f32>();
 
@@ -21,14 +21,17 @@ fn main() {
     glfw.window_hint(WindowHint::OpenGlProfile(OpenGlProfileHint::Core));
     glfw.window_hint(WindowHint::Decorated(false)); // No frame
     glfw.window_hint(WindowHint::TransparentFramebuffer(false));
-    glfw.window_hint(WindowHint::Resizable(false));
+    glfw.window_hint(WindowHint::Resizable(true));
 
     let (mut window, events) = glfw
         .create_window(WIDTH, HEIGHT, "minecraft", WindowMode::Windowed)
         .expect("Failed to create GLFW window.");
 
     window.set_key_polling(true);
+    window.set_cursor_pos_polling(true);
+    window.set_mouse_button_polling(true);
     window.set_size_polling(true);
+
     window.make_current();
 
     let mut gl =
@@ -57,14 +60,12 @@ fn main() {
     let vao = unsafe { gl.create_vertex_array().unwrap() };
     let cube_vbo = unsafe { gl.create_buffer().unwrap() };
     let instance_vbo = unsafe { gl.create_buffer().unwrap() };
-    // let ebo = unsafe { gl.create_buffer().unwrap() };
 
+    // Vec::with_capacity(chunk_size.0 * chunk_size.1 * chunk_size.2);
     let chunk_size = (4, 4, 4); // (length, breadth, depth)
     let mut instance_positions: Vec<f32> = vec![];
-    // Vec::with_capacity(chunk_size.0 * chunk_size.1 * chunk_size.2);
     let spacing = 1.0;
 
-    // Generate multiple chunks at different positions
     for chunk_x in 0..2 {
         for chunk_y in 0..2 {
             for chunk_z in 0..2 {
@@ -179,38 +180,63 @@ fn main() {
 
     let (width, height) = window.get_size();
 
-    let mut camera = Camera {
-        eye: (3.0, 7.0, 10.0).into(),
-        target: (0.0, 0.0, 0.0).into(), // have a look at the origin
-        up: glam::Vec3::Y,
-        aspect: width as f32 / height as f32,
-        fovy: 45.0,
-        z_near: 0.1,
-        z_far: 100.0,
-        speed: 0.2,
+    let mut camera = Camera::new(
+        (0.0, 6.0, 3.0).into(),
+        45_f32.to_radians(),
+        0.1,
+        100.0,
+        width as _,
+        height as _,
+    );
 
-        forward_pressed: false,
-        backward_pressed: false,
-        left_pressed: false,
-        right_pressed: false,
-    };
+    let mut keyboard_state = KeyboardState::default();
+    let mut pointer_state = PointerState::default();
 
     let light_position = glam::vec3(-2.0, 8.0, -5.0);
     let light_color = glam::vec3(1.0, 1.0, 1.0);
 
+    let mut clock = Instant::now();
+    let mut click_start_position = None;
+
     while !window.should_close() {
+        let dt = clock.elapsed().as_nanos() as f32 / 1e9;
+        clock = Instant::now();
+
         glfw.poll_events();
         glfw::flush_messages(&events).for_each(|(_, event)| {
             let window: &mut glfw::Window = &mut window;
 
-            if camera.process_event(&event) {
-                return;
-            }
-
             match event {
                 WindowEvent::Key(Key::Escape, _, Action::Press, _) => window.set_should_close(true),
+
+                WindowEvent::Key(key, _, action, _) => {
+                    let value = matches!(action, Action::Press | Action::Repeat);
+                    match key {
+                        Key::W => keyboard_state.w = value,
+                        Key::A => keyboard_state.a = value,
+                        Key::S => keyboard_state.s = value,
+                        Key::D => keyboard_state.d = value,
+                        Key::Q => keyboard_state.q = value,
+                        Key::E => keyboard_state.e = value,
+
+                        _ => {}
+                    }
+                }
+
+                WindowEvent::MouseButton(btn, action, _) => {
+                    let value = matches!(action, Action::Press);
+                    if matches!(btn, MouseButtonRight) {
+                        pointer_state.secondary_down = value;
+                        click_start_position = Some(glam::DVec2::from(window.get_cursor_pos()));
+                    }
+                }
+
+                WindowEvent::CursorPos(x, y) => {
+                    pointer_state.pos = Some(glam::vec2(x as _, y as _));
+                }
+
                 WindowEvent::Size(w, h) => {
-                    camera.aspect = w as f32 / h as f32;
+                    camera.resize(w as _, h as _);
                     unsafe { gl.viewport(0, 0, w, h) }
                 }
 
@@ -218,20 +244,35 @@ fn main() {
             }
         });
 
+        camera.update(dt, pointer_state, keyboard_state);
+
+        if pointer_state.secondary_down {
+            window.set_cursor_mode(CursorMode::Hidden);
+        } else {
+            window.set_cursor_mode(CursorMode::Normal);
+        }
+
+        if !pointer_state.secondary_down && click_start_position.is_some() {
+            let glam::DVec2 { x, y } = click_start_position.take().unwrap();
+            window.set_cursor_pos(x, y);
+        }
+
+        camera.recalculate_view();
+        camera.recalculate_projection();
+
         let view = camera.get_view();
         let projection = camera.get_projection();
 
         unsafe {
-            let clock = Instant::now();
             gl.use_program(Some(shader_program));
 
             // eye position
             gl.uniform_3_f32(
                 gl.get_uniform_location(shader_program, "eye_position")
                     .as_ref(),
-                camera.eye.x,
-                camera.eye.y,
-                camera.eye.z,
+                camera.get_position().x,
+                camera.get_position().y,
+                camera.get_position().z,
             );
 
             // light position
@@ -274,7 +315,6 @@ fn main() {
             gl.bind_vertex_array(Some(vao));
 
             gl.draw_arrays_instanced(glow::TRIANGLES, 0, 36, instance_positions.len() as _);
-            println!("GPU Time: {:?}", clock.elapsed());
         }
 
         window.swap_buffers();
@@ -423,8 +463,10 @@ fn generate_chunk(
     positions
 }
 
+/// x, y, z, s, t, nx, ny, nz
 #[rustfmt::skip]
 const VERTICES: [f32; 288] = [
+
     // ---------------------------
     // FRONT face (z = +0.5), normal (0, 0, 1)
     // Triangle 1
