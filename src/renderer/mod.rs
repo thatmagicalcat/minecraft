@@ -13,14 +13,16 @@ use texture::TextureData;
 pub use camera::*;
 pub use light::Light;
 
+const TEXTURE_WIDTH: usize = 64;
+const TEXTURE_HEIGHT: usize = 48;
+
 pub struct Renderer<'a> {
     gl: &'a glow::Context,
     cubes: Cubes<'a>,
 
-    #[allow(unused)]
-    texture_data: TextureData,
+    // texture_id: glow::NativeTexture,
+    texture_array_id: glow::NativeTexture,
 
-    texture_id: glow::NativeTexture,
     camera: Camera,
     light: Light<'a>,
     program: Program<'a>,
@@ -31,33 +33,33 @@ impl<'a> Renderer<'a> {
         gl: &'a glow::Context,
         camera: Camera,
         instance_positions: &[f32],
+        instance_texture_ids: &[i32],
         light_color: glam::Vec3,
         light_position: glam::Vec3,
     ) -> Self {
-        let texture_data = TextureData::new("res/dirt.png");
+        // let texture_data = TextureData::new("res/dirt.png");
+        // let texture_id = unsafe {
+        //     let id = gl.create_texture().unwrap();
+        //     gl.bind_texture(glow::TEXTURE_2D, Some(id));
 
-        let texture_id = unsafe {
-            let id = gl.create_texture().unwrap();
-            gl.bind_texture(glow::TEXTURE_2D, Some(id));
+        // gl.tex_image_2d(
+        //     glow::TEXTURE_2D,
+        //     0,
+        //     texture_data.format as _,
+        //     texture_data.width,
+        //     texture_data.height,
+        //     0,
+        //     texture_data.format,
+        //     glow::UNSIGNED_BYTE,
+        //     glow::PixelUnpackData::Slice(Some(texture_data.data)),
+        // );
 
-            gl.tex_image_2d(
-                glow::TEXTURE_2D,
-                0,
-                texture_data.format as _,
-                texture_data.width,
-                texture_data.height,
-                0,
-                texture_data.format,
-                glow::UNSIGNED_BYTE,
-                glow::PixelUnpackData::Slice(Some(texture_data.data)),
-            );
+        //     gl.generate_mipmap(glow::TEXTURE_2D);
 
-            gl.generate_mipmap(glow::TEXTURE_2D);
+        //     texture::setup_texture_params(gl, glow::TEXTURE_2D);
 
-            texture::setup_texutre_params(gl, glow::TEXTURE_2D);
-
-            id
-        };
+        //     id
+        // };
 
         let program = Program::from_str(
             gl,
@@ -67,15 +69,49 @@ impl<'a> Renderer<'a> {
         )
         .expect("failed to create shader program");
 
+        let texture_array_id = unsafe { gl.create_texture().unwrap() };
+        let texture_names = ["res/grass.png", "res/dirt.png"];
+
+        unsafe {
+            gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(texture_array_id));
+            gl.tex_storage_3d(
+                glow::TEXTURE_2D_ARRAY,
+                1,
+                glow::RGB8,
+                TEXTURE_WIDTH as _,
+                TEXTURE_HEIGHT as _,
+                texture_names.len() as _,
+            );
+
+            for (z_offset, name) in texture_names.iter().enumerate() {
+                let data = TextureData::new(name);
+                gl.tex_sub_image_3d(
+                    glow::TEXTURE_2D_ARRAY,
+                    0,
+                    0,
+                    0,
+                    z_offset as _,
+                    TEXTURE_WIDTH as _,
+                    TEXTURE_HEIGHT as _,
+                    1,
+                    data.format,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelUnpackData::Slice(Some(data.data)),
+                );
+            }
+
+            gl.generate_mipmap(glow::TEXTURE_2D_ARRAY);
+            texture::setup_texture_params(gl, glow::TEXTURE_2D_ARRAY);
+        }
+
         Self {
             gl,
-            texture_data,
-            texture_id,
+            texture_array_id,
             camera,
             program,
 
             light: Light::new(gl, light_position, light_color),
-            cubes: Cubes::new(gl, instance_positions),
+            cubes: Cubes::new(gl, instance_positions, instance_texture_ids),
         }
     }
 
@@ -98,7 +134,7 @@ impl<'a> Renderer<'a> {
     fn bind_texture(&self) {
         unsafe {
             self.gl
-                .bind_texture(glow::TEXTURE_2D, Some(self.texture_id));
+                .bind_texture(glow::TEXTURE_2D_ARRAY, Some(self.texture_array_id));
         }
     }
 
@@ -141,7 +177,7 @@ impl<'a> Renderer<'a> {
 impl Drop for Renderer<'_> {
     fn drop(&mut self) {
         unsafe {
-            self.gl.delete_texture(self.texture_id);
+            self.gl.delete_texture(self.texture_array_id);
         }
     }
 }

@@ -2,17 +2,25 @@ use crate::defer;
 use glow::{HasContext, NativeBuffer};
 
 const F32S: usize = std::mem::size_of::<f32>();
+const I32S: usize = std::mem::size_of::<i32>();
 
 pub struct Cubes<'a> {
     gl: &'a glow::Context,
     vao: glow::NativeVertexArray,
     vbo: glow::NativeBuffer,
-    instance_vbo: glow::NativeBuffer,
+
+    instance_position_vbo: glow::NativeBuffer,
+    instance_texture_index_vbo: glow::NativeBuffer,
+
     instances: usize,
 }
 
 impl<'a> Cubes<'a> {
-    pub fn new(gl: &'a glow::Context, instance_positions: &[f32]) -> Self {
+    pub fn new(
+        gl: &'a glow::Context,
+        instance_positions: &[f32],
+        instance_texture_ids: &[i32],
+    ) -> Self {
         let cube = Self::init(gl, instance_positions.len());
 
         {
@@ -24,11 +32,13 @@ impl<'a> Cubes<'a> {
             cube.fill_buffer();
             cube.setup_attrib_ptrs();
 
-            cube.bind_vbo(cube.instance_vbo);
-            cube.setup_instance_vbo(instance_positions);
+            cube.bind_vbo(cube.instance_position_vbo);
+            cube.setup_instance_position_vbo(instance_positions);
 
-            // we only need one
-            defer! { cube.unbind_vbo(); }
+            cube.bind_vbo(cube.instance_texture_index_vbo);
+            cube.setup_instance_texture_index_vbo(instance_texture_ids);
+
+            cube.unbind_vbo();
         }
 
         cube
@@ -45,13 +55,15 @@ impl<'a> Cubes<'a> {
     fn init(gl: &'a glow::Context, instances: usize) -> Self {
         let vao = unsafe { gl.create_vertex_array().unwrap() };
         let vbo = unsafe { gl.create_buffer().unwrap() };
-        let instance_vbo = unsafe { gl.create_buffer().unwrap() };
+        let instance_position_vbo = unsafe { gl.create_buffer().unwrap() };
+        let instance_texture_index_vbo = unsafe { gl.create_buffer().unwrap() };
 
         Self {
             gl,
             vao,
             vbo,
-            instance_vbo,
+            instance_position_vbo,
+            instance_texture_index_vbo,
             instances,
         }
     }
@@ -122,11 +134,34 @@ impl<'a> Cubes<'a> {
         }
     }
 
-    /// Setup instance buffer.
+    /// Setup texture index buffer.
     /// Instance VBO must be bound before calling this.
-    fn setup_instance_vbo(&self, instance_positions: &[f32]) {
+    fn setup_instance_texture_index_vbo(&self, instance_texture_ids: &[i32]) {
         assert!(
-            self.is_vbo_bound(self.instance_vbo),
+            self.is_vbo_bound(self.instance_texture_index_vbo),
+            "Instance VBO not bound"
+        );
+
+        unsafe {
+            self.gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(instance_texture_ids),
+                glow::STATIC_DRAW,
+            );
+
+            // instance texture id
+            self.gl.enable_vertex_attrib_array(4);
+            self.gl
+                .vertex_attrib_pointer_f32(4, 1, glow::INT, false, I32S as _, 0);
+            self.gl.vertex_attrib_divisor(4, 1);
+        }
+    }
+
+    /// Setup instance position buffer.
+    /// Instance VBO must be bound before calling this.
+    fn setup_instance_position_vbo(&self, instance_positions: &[f32]) {
+        assert!(
+            self.is_vbo_bound(self.instance_position_vbo),
             "Instance VBO not bound"
         );
 
@@ -161,7 +196,7 @@ impl Drop for Cubes<'_> {
         unsafe {
             self.gl.delete_vertex_array(self.vao);
             self.gl.delete_buffer(self.vbo);
-            self.gl.delete_buffer(self.instance_vbo);
+            self.gl.delete_buffer(self.instance_position_vbo);
         }
     }
 }

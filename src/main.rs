@@ -7,8 +7,6 @@ mod defer;
 mod renderer;
 mod window;
 
-// use camera::*;
-
 const WIDTH: u32 = 1000;
 const HEIGHT: u32 = 1000;
 
@@ -41,28 +39,20 @@ fn main() {
 
     unsafe { gl.viewport(0, 0, WIDTH as _, HEIGHT as _) };
 
-    // Vec::with_capacity(chunk_size.0 * chunk_size.1 * chunk_size.2);
-    let chunk_size = (4, 4, 4); // (length, breadth, depth)
     let mut instance_positions: Vec<f32> = vec![];
-    let spacing = 1.0;
+    let mut instance_texture_ids: Vec<i32> = vec![];
 
-    for chunk_x in 0..2 {
-        // for chunk_y in 0..2 {
-            for chunk_z in 0..2 {
-                let chunk_data = generate_chunk(
-                    chunk_x,
-                    0,
-                    // chunk_y,
-                    chunk_z,
-                    chunk_size.0,
-                    chunk_size.1,
-                    chunk_size.2,
-                    spacing,
-                );
-
-                instance_positions.extend(chunk_data);
+    for block_x in 0..20 {
+        for block_y in 0..20 {
+            for block_z in 0..20 {
+                instance_texture_ids.push(if block_x == 0 { 0 } else { 1 });
+                instance_positions.extend_from_slice(&[
+                    block_y as f32,
+                    -block_x as f32,
+                    block_z as f32,
+                ]);
             }
-        // }
+        }
     }
 
     let (width, height) = window.get_size();
@@ -79,7 +69,7 @@ fn main() {
     let mut renderer = renderer::Renderer::new(
         &gl,
         renderer::Camera::new(
-            (0.0, 6.0, 3.0).into(),
+            (0.0, 2.0, 10.0).into(),
             45_f32.to_radians(),
             0.1,
             100.0,
@@ -87,6 +77,7 @@ fn main() {
             height as _,
         ),
         &instance_positions,
+        &instance_texture_ids,
         light_color,
         light_position,
     );
@@ -111,6 +102,8 @@ fn main() {
                         Key::D => keyboard_state.d = value,
                         Key::Q => keyboard_state.q = value,
                         Key::E => keyboard_state.e = value,
+
+                        Key::LeftShift => keyboard_state.shift = value,
 
                         _ => {}
                     }
@@ -160,30 +153,4 @@ fn main() {
 
         window.swap_buffers();
     }
-}
-
-fn generate_chunk(
-    chunk_x: i32,
-    chunk_y: i32,
-    chunk_z: i32,
-    length: i32,
-    breadth: i32,
-    depth: i32,
-    spacing: f32,
-) -> Vec<f32> {
-    let mut positions = Vec::with_capacity((length * breadth * depth) as usize);
-
-    for x in 0..breadth {
-        for y in 0..length {
-            for z in 0..depth {
-                let world_x = chunk_x as f32 * length as f32 * spacing + x as f32 * spacing;
-                let world_y = chunk_y as f32 * breadth as f32 * spacing + y as f32 * spacing;
-                let world_z = chunk_z as f32 * depth as f32 * spacing - z as f32 * spacing; // Negative Z direction
-
-                positions.extend_from_slice(&[world_x, world_y, world_z]);
-            }
-        }
-    }
-
-    positions
 }
