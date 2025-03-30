@@ -57,7 +57,12 @@ impl Camera {
         self.last_mouse_position = mouse_pos;
 
         let up_direction = glam::Vec3::Y;
-        let speed = 5.0;
+        let mut speed = 5.0;
+
+        if keyboard_state.shift {
+            speed *= 3.0;
+        }
+
         let right_direction = self.forward_direction.cross(up_direction);
 
         let mut moved = false;
@@ -154,6 +159,7 @@ pub struct KeyboardState {
     pub d: bool,
     pub q: bool,
     pub e: bool,
+    pub shift: bool,
 }
 
 // #[allow(unused)]
