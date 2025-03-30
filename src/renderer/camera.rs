@@ -138,10 +138,6 @@ impl Camera {
     pub fn get_position(&self) -> &glam::Vec3 {
         &self.position
     }
-
-    pub fn get_direction(&self) -> &glam::Vec3 {
-        &self.forward_direction
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
