@@ -45,10 +45,10 @@ fn main() {
     for block_x in 0..20 {
         for block_y in 0..20 {
             for block_z in 0..20 {
-                instance_texture_ids.push(if block_x == 0 { 0 } else { 1 });
+                instance_texture_ids.push(if block_y == 0 { 0 } else { 1 });
                 instance_positions.extend_from_slice(&[
-                    block_y as f32,
-                    -block_x as f32,
+                    block_x as f32,
+                    -block_y as f32,
                     block_z as f32,
                 ]);
             }
