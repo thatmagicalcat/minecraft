@@ -51,7 +51,7 @@ impl Drop for TextureData {
     }
 }
 
-pub fn setup_texutre_params(gl: &glow::Context, target: u32) {
+pub fn setup_texture_params(gl: &glow::Context, target: u32) {
     unsafe {
         gl.tex_parameter_i32(target, glow::TEXTURE_WRAP_S, glow::REPEAT as _);
         gl.tex_parameter_i32(target, glow::TEXTURE_WRAP_T, glow::REPEAT as _);
